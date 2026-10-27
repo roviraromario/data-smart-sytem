@@ -1,6 +1,8 @@
 # DataMart S.A.S. — Pipeline ETL
 
-Pipeline diario con Apache Airflow y PostgreSQL.  
+Repositorio Git: https://github.com/roviraromario/data-smart-sytem
+
+Pipeline diario con Apache Airflow y PostgreSQL.
 Arquitectura Bronze → Silver → Gold.
 
 ---
@@ -28,7 +30,7 @@ docker compose up -d
 #    http://localhost:8080   usuario: admin   contraseña: valor de AIRFLOW_ADMIN_PASSWORD en .env
 ```
 
-El generador no sobrescribe un `.env` existente. Guarda sus credenciales fuera del repositorio y no compartas ni publiques ese archivo. La interfaz de Airflow queda enlazada a `localhost`; para exponerla fuera de la máquina, configura un proxy inverso y autenticación adecuada.
+El generador no sobrescribe un `.env` existente. Guarda sus credenciales fuera del repositorio y no compartas ni publiques ese archivo. La interfaz de Airflow queda enlazada a `localhost`; para ex[...]
 
 Al arrancar, el entorno configura automáticamente:
 - Usuario administrador de Airflow
