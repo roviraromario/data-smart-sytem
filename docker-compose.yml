@@ -1,0 +1,104 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.5-python3.12
+  environment: &airflow-environment
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?Copy .env.example to .env}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_META_DB_USER:?Configure .env}:${AIRFLOW_META_DB_PASSWORD:?Configure .env}@airflow-db:5432/${AIRFLOW_META_DB_NAME:?Configure .env}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?Configure .env}
+    AIRFLOW_CONN_WAREHOUSE_DB: postgresql://${WAREHOUSE_DB_USER:?Configure .env}:${WAREHOUSE_DB_PASSWORD:?Configure .env}@warehouse-db:5432/${WAREHOUSE_DB_NAME:?Configure .env}
+    AIRFLOW_VAR_ONLINE_RETAIL_CSV_PATH: /opt/airflow/data/data.csv
+    AIRFLOW_VAR_ONLINE_RETAIL_II_CSV_PATH: /opt/airflow/data/Sales Transaction v.4a.csv
+    AIRFLOW_VAR_ETL_CHUNK_SIZE: ${ETL_CHUNK_SIZE:-50000}
+    AIRFLOW_VAR_MAX_REJECTION_RATE: ${MAX_REJECTION_RATE:-0.05}
+    PYTHONPATH: /opt/airflow/src
+  volumes: &airflow-volumes
+    - ./dags:/opt/airflow/dags
+    - ./Src:/opt/airflow/src:ro
+    - ./Data/Raw:/opt/airflow/data:ro
+    - ./SQL:/opt/airflow/sql:ro
+    - ./scripts:/opt/airflow/scripts:ro
+    - airflow-logs:/opt/airflow/logs
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    airflow-db:
+      condition: service_healthy
+
+services:
+  airflow-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${AIRFLOW_META_DB_USER:?Configure .env}
+      POSTGRES_PASSWORD: ${AIRFLOW_META_DB_PASSWORD:?Configure .env}
+      POSTGRES_DB: ${AIRFLOW_META_DB_NAME:?Configure .env}
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  warehouse-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${WAREHOUSE_DB_USER:?Configure .env}
+      POSTGRES_PASSWORD: ${WAREHOUSE_DB_PASSWORD:?Configure .env}
+      POSTGRES_DB: ${WAREHOUSE_DB_NAME:?Configure .env}
+    volumes:
+      - warehouse-db-data:/var/lib/postgresql/data
+      - ./SQL:/opt/airflow/sql:ro
+      - ./SQL/Bronce/create_bronze_tables.sql:/docker-entrypoint-initdb.d/001-bronze.sql:ro
+      - ./SQL/Silver/create_silver_tables.sql:/docker-entrypoint-initdb.d/002-silver.sql:ro
+      - ./SQL/Gold/create_gold_tables.sql:/docker-entrypoint-initdb.d/003-gold.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    command: ["bash", "/opt/airflow/scripts/airflow-init.sh"]
+    environment:
+      <<: *airflow-environment
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:?Configure .env}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?Configure .env}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:?Configure .env}
+      AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-Data}
+      AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-Admin}
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "127.0.0.1:${AIRFLOW_WEBSERVER_PORT:-8080}:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      warehouse-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      warehouse-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  airflow-db-data:
+  warehouse-db-data:
+  airflow-logs:
