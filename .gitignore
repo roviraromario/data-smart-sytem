@@ -1,0 +1,22 @@
+# Python cache and virtual envs
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Docker / editor artifacts
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and temporary files
+*.log
+/tmp/
+
+# Airflow local runtime artifacts
+logs/
